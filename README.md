@@ -1,7 +1,6 @@
 # faceswap_2012
 
 > Recreated the old FaceSwapp from 2012. Make apps great again.
-> Recriei o antigo FaceSwapp de 2012.
 
 A native Python **manual face-swap** app. Pick two photos, place 3 markers
 (left eye, right eye, mouth) on each, and paint with a brush to reveal the
