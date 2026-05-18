@@ -85,6 +85,10 @@ class FaceSwapApp:
         self.color_match_enabled = tk.BooleanVar(value=False)
         self.color_match_strength = tk.IntVar(value=80)
 
+        # acabamento (borda suave + camada inversa)
+        self.feather_radius = tk.IntVar(value=0)        # 0..40 px (em display)
+        self.inverse_strength = tk.IntVar(value=0)      # 0..100 %
+
         # container das telas
         self.container = tk.Frame(self.root, bg=BG)
         self.container.pack(fill="both", expand=True)
@@ -536,6 +540,34 @@ class FaceSwapApp:
             side, text="Apagar pintura", value="apagar", variable=self.brush_mode
         ).pack(anchor="w", padx=14)
 
+        # ---- acabamento (borda suave + camada inversa) ----
+        ttk.Label(
+            side, text="Acabamento",
+            style="Panel.TLabel", font=("Segoe UI", 12, "bold"),
+        ).pack(anchor="w", padx=14, pady=(14, 4))
+
+        ttk.Label(side, text="Suavizar borda", style="Panel.TLabel").pack(anchor="w", padx=14)
+        feather_row = tk.Frame(side, bg=PANEL)
+        feather_row.pack(fill="x", padx=14, pady=(2, 6))
+        ttk.Scale(
+            feather_row, from_=0, to=40,
+            variable=self.feather_radius,
+            command=lambda _v: self._on_finishing_change(),
+        ).pack(side="left", fill="x", expand=True)
+        self.feather_value_lbl = ttk.Label(feather_row, text="0 px", style="Panel.TLabel", width=6)
+        self.feather_value_lbl.pack(side="right")
+
+        ttk.Label(side, text="Camada inversa", style="Panel.TLabel").pack(anchor="w", padx=14)
+        inv_row = tk.Frame(side, bg=PANEL)
+        inv_row.pack(fill="x", padx=14, pady=(2, 6))
+        ttk.Scale(
+            inv_row, from_=0, to=100,
+            variable=self.inverse_strength,
+            command=lambda _v: self._on_finishing_change(),
+        ).pack(side="left", fill="x", expand=True)
+        self.inverse_value_lbl = ttk.Label(inv_row, text="0%", style="Panel.TLabel", width=6)
+        self.inverse_value_lbl.pack(side="right")
+
         # ---- filtro de cor (opcional) ----
         ttk.Label(
             side, text="Cor / Iluminação (opcional)",
@@ -615,6 +647,7 @@ class FaceSwapApp:
 
         self._update_brush_label()
         self._update_color_match_label()
+        self._update_finishing_labels()
         self._render_composite()
 
     def _update_brush_label(self):
@@ -623,6 +656,28 @@ class FaceSwapApp:
 
     def _update_color_match_label(self):
         self.cm_value_lbl.config(text=f"{int(self.color_match_strength.get())}%")
+
+    def _update_finishing_labels(self):
+        self.feather_value_lbl.config(text=f"{int(self.feather_radius.get())} px")
+        self.inverse_value_lbl.config(text=f"{int(self.inverse_strength.get())}%")
+
+    def _on_finishing_change(self):
+        self._update_finishing_labels()
+        self._render_composite()
+
+    @staticmethod
+    def _apply_finishing(mask: np.ndarray, feather_px: int, inverse_pct: int) -> np.ndarray:
+        """Aplica feather (blur gaussiano) e camada inversa a uma máscara float32 0..1."""
+        m = mask
+        if feather_px > 0:
+            # sigma proporcional ao raio; ksize automático
+            m = cv2.GaussianBlur(m, (0, 0), sigmaX=float(feather_px))
+        if inverse_pct > 0:
+            inv = inverse_pct / 100.0
+            # m_final = m + (1-m)*inv  => onde já tem reveal mantém forte;
+            # onde está vazio, ganha um spill de intensidade `inv`.
+            m = m + (1.0 - m) * inv
+        return np.clip(m, 0.0, 1.0)
 
     def _on_color_match_toggle(self):
         if self.color_match_enabled.get():
@@ -775,7 +830,12 @@ class FaceSwapApp:
     def _render_composite(self):
         if self.display_base is None:
             return
-        m = self.display_mask[:, :, None]  # (h,w,1)
+        m_eff = self._apply_finishing(
+            self.display_mask,
+            int(self.feather_radius.get()),
+            int(self.inverse_strength.get()),
+        )
+        m = m_eff[:, :, None]  # (h,w,1)
         warp = self._effective_display_warp()
         comp = (
             self.display_base.astype(np.float32) * (1 - m)
@@ -820,7 +880,16 @@ class FaceSwapApp:
         # escala a mascara de display para resolução total
         Ah, Aw = self.base_a_full.shape[:2]
         mask_full = cv2.resize(self.display_mask, (Aw, Ah), interpolation=cv2.INTER_LINEAR)
-        mask_full = np.clip(mask_full, 0.0, 1.0)
+        # acabamento na resolução total (raio escalado proporcionalmente para
+        # preservar o tamanho visual do feather)
+        feather_px = int(self.feather_radius.get())
+        if feather_px > 0 and self.display_scale > 0:
+            feather_full = max(1, int(round(feather_px / self.display_scale)))
+        else:
+            feather_full = 0
+        mask_full = self._apply_finishing(
+            mask_full, feather_full, int(self.inverse_strength.get())
+        )
         m = mask_full[:, :, None]
         warp_full = self._effective_full_warp()
         composed = (
