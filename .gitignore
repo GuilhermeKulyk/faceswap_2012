@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.idea/
+.vscode/
+*.log
+Thumbs.db
+.DS_Store
+
+# arquivos de teste local / saídas
+*_smoke*.py
+faceswap_output*.png
+Nova pasta/
