@@ -1,6 +1,6 @@
 # faceswap_2012
 
-> Recriei o antigo FaceSwapp de 2012. Make apps great again.
+> Recriei o antigo FaceSwapp de 2012. 
 > Recreated the old FaceSwapp from 2012. Make apps great again.
 
 App nativo de **face swap manual** escrito em Python puro. Você escolhe duas
